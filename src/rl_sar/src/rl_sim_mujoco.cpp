@@ -14,13 +14,17 @@ RL_Sim::RL_Sim(int argc, char **argv)
 
     if (argc < 3)
     {
-        std::cout << LOGGER::ERROR << "Usage: " << argv[0] << " robot_name scene_name" << std::endl;
+        std::cout << LOGGER::ERROR << "Usage: " << argv[0] << " robot_name scene_name [config_name]" << std::endl;
         throw std::runtime_error("Invalid arguments");
     }
     else
     {
         this->robot_name = argv[1];
         this->scene_name = argv[2];
+        if (argc >= 4)
+        {
+            this->requested_config_name = argv[3];
+        }
     }
 
     this->ang_vel_axis = "body";
@@ -151,6 +155,27 @@ RL_Sim::~RL_Sim()
     std::cout << LOGGER::INFO << "RL_Sim exit" << std::endl;
 }
 
+void RL_Sim::CaptureRootOrigin()
+{
+    if (!this->mj_data)
+    {
+        return;
+    }
+    this->root_origin_pos_w = {
+        static_cast<float>(this->mj_data->qpos[0]),
+        static_cast<float>(this->mj_data->qpos[1]),
+        static_cast<float>(this->mj_data->qpos[2]),
+    };
+    this->root_origin_initialized = true;
+}
+
+void RL_Sim::OnPolicyActivated(const std::string &config_name)
+{
+    (void)config_name;
+    this->root_origin_initialized = false;
+    this->obs.root_pos_rel_xy_b = {0.0f, 0.0f};
+}
+
 void RL_Sim::GetState(RobotState<float> *state)
 {
     if (mj_data)
@@ -202,6 +227,7 @@ void RL_Sim::RobotControl()
         {
             mj_resetData(this->mj_model, this->mj_data);
             mj_forward(this->mj_model, this->mj_data);
+            this->CaptureRootOrigin();
         }
     }
     if (this->control.current_keyboard == Input::Keyboard::Enter || this->control.current_gamepad == Input::Gamepad::RB_X)
@@ -331,7 +357,18 @@ void RL_Sim::RunModel()
 {
     if (this->rl_init_done && simulation_running)
     {
+        if (!this->root_origin_initialized)
+        {
+            this->CaptureRootOrigin();
+        }
         this->episode_length_buf += 1;
+        this->obs.base_quat = this->robot_state.imu.quaternion;
+        std::vector<float> root_lin_vel_w = {
+            static_cast<float>(this->mj_data->qvel[0]),
+            static_cast<float>(this->mj_data->qvel[1]),
+            static_cast<float>(this->mj_data->qvel[2]),
+        };
+        this->obs.lin_vel = QuatRotateInverse(this->obs.base_quat, root_lin_vel_w);
         this->obs.ang_vel = this->robot_state.imu.gyroscope;
         this->obs.commands = {this->control.x, this->control.y, this->control.yaw};
         //not currently available for non-ros mujoco version
@@ -339,7 +376,13 @@ void RL_Sim::RunModel()
         // {
         //     this->obs.commands = {(float)this->cmd_vel.linear.x, (float)this->cmd_vel.linear.y, (float)this->cmd_vel.angular.z};
         // }
-        this->obs.base_quat = this->robot_state.imu.quaternion;
+        std::vector<float> root_drift_w = {
+            static_cast<float>(this->mj_data->qpos[0]) - this->root_origin_pos_w[0],
+            static_cast<float>(this->mj_data->qpos[1]) - this->root_origin_pos_w[1],
+            static_cast<float>(this->mj_data->qpos[2]) - this->root_origin_pos_w[2],
+        };
+        std::vector<float> root_drift_b = QuatRotateInverse(this->obs.base_quat, root_drift_w);
+        this->obs.root_pos_rel_xy_b = {root_drift_b[0], root_drift_b[1]};
         this->obs.dof_pos = this->robot_state.motor_state.q;
         this->obs.dof_vel = this->robot_state.motor_state.dq;
 

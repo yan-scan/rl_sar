@@ -64,6 +64,7 @@ private:
     std::vector<float> Forward() override;
     void GetState(RobotState<float> *state) override;
     void SetCommand(const RobotCommand<float> *command) override;
+    void OnPolicyActivated(const std::string &config_name) override;
     void RunModel();
     void RobotControl();
 
@@ -84,6 +85,9 @@ private:
     mjData *mj_data;
     mjModel *mj_model;
     std::string scene_name;
+    std::vector<float> root_origin_pos_w = {0.0f, 0.0f, 0.0f};
+    bool root_origin_initialized = false;
+    void CaptureRootOrigin();
 
     // joystick
     std::unique_ptr<Joystick> sys_js;

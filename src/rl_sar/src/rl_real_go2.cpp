@@ -8,6 +8,10 @@
 RL_Real::RL_Real(int argc, char **argv)
 {
     bool wheel_mode = (argc > 2 && std::string(argv[2]) == "wheel");
+    if (wheel_mode && argc > 3)
+    {
+        this->requested_config_name = argv[3];
+    }
 
 #if defined(USE_ROS1) && defined(USE_ROS)
     ros::NodeHandle nh;
@@ -103,6 +107,54 @@ RL_Real::~RL_Real()
     this->loop_plot->shutdown();
 #endif
     std::cout << LOGGER::INFO << "RL_Real exit" << std::endl;
+}
+
+void RL_Real::OnPolicyActivated(const std::string &config_name)
+{
+    (void)config_name;
+    this->estimated_root_origin_w = this->estimated_root_pos_w;
+    this->estimated_root_origin_initialized = true;
+    this->obs.root_pos_rel_xy_b = {0.0f, 0.0f};
+}
+
+void RL_Real::UpdateEstimatedBaseMotion()
+{
+    const auto wheel_indices = this->params.Get<std::vector<int>>(
+        "real_odom_wheel_indices",
+        this->params.Get<std::vector<int>>("wheel_indices")
+    );
+    float average_wheel_velocity = 0.0f;
+    if (!wheel_indices.empty())
+    {
+        for (int wheel_idx : wheel_indices)
+        {
+            if (wheel_idx >= 0 && wheel_idx < static_cast<int>(this->robot_state.motor_state.dq.size()))
+            {
+                average_wheel_velocity += this->robot_state.motor_state.dq[wheel_idx];
+            }
+        }
+        average_wheel_velocity /= static_cast<float>(wheel_indices.size());
+    }
+
+    const float wheel_radius = this->params.Get<float>("real_odom_wheel_radius", 0.086f);
+    const float velocity_sign = this->params.Get<float>("real_odom_velocity_sign", 1.0f);
+    const float dt = this->params.Get<float>("dt") * static_cast<float>(this->params.Get<int>("decimation"));
+
+    this->obs.lin_vel = {average_wheel_velocity * wheel_radius * velocity_sign, 0.0f, 0.0f};
+
+    const std::vector<float> body_to_world_quat = QuaternionConjugate(this->obs.base_quat);
+    const std::vector<float> lin_vel_w = QuatRotateInverse(body_to_world_quat, this->obs.lin_vel);
+    this->estimated_root_pos_w += lin_vel_w * dt;
+
+    if (!this->estimated_root_origin_initialized)
+    {
+        this->estimated_root_origin_w = this->estimated_root_pos_w;
+        this->estimated_root_origin_initialized = true;
+    }
+
+    const std::vector<float> root_drift_w = this->estimated_root_pos_w - this->estimated_root_origin_w;
+    const std::vector<float> root_drift_b = QuatRotateInverse(this->obs.base_quat, root_drift_w);
+    this->obs.root_pos_rel_xy_b = {root_drift_b[0], root_drift_b[1]};
 }
 
 void RL_Real::GetState(RobotState<float> *state)
@@ -224,6 +276,7 @@ void RL_Real::RunModel()
         }
 #endif
         this->obs.base_quat = this->robot_state.imu.quaternion;
+        this->UpdateEstimatedBaseMotion();
         this->obs.dof_pos = this->robot_state.motor_state.q;
         this->obs.dof_vel = this->robot_state.motor_state.dq;
 
@@ -448,7 +501,7 @@ int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        std::cout << LOGGER::ERROR << "Usage: " << argv[0] << " networkInterface [wheel]" << std::endl;
+        std::cout << LOGGER::ERROR << "Usage: " << argv[0] << " networkInterface [wheel] [config_name]" << std::endl;
         throw std::runtime_error("Invalid arguments");
     }
     ChannelFactory::Instance()->Init(0, argv[1]);

@@ -110,6 +110,10 @@ std::vector<float> RL::ComputeObservation()
         {
             obs_list.push_back(this->obs.actions);
         }
+        else if (observation == "root_pos_rel_xy_b")
+        {
+            obs_list.push_back(this->obs.root_pos_rel_xy_b * this->params.Get<float>("root_pos_rel_xy_b_scale", 1.0f));
+        }
         // ============= Other Observations =============
         else if (observation == "whole_body_tracking/motion_command")
         {
@@ -194,6 +198,7 @@ void RL::InitObservations()
     this->obs.dof_vel.resize(this->params.Get<int>("num_of_dofs"), 0.0f);
     this->obs.actions.clear();
     this->obs.actions.resize(this->params.Get<int>("num_of_dofs"), 0.0f);
+    this->obs.root_pos_rel_xy_b = {0.0f, 0.0f};
     this->ComputeObservation();
 }
 

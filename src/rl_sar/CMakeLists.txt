@@ -316,8 +316,26 @@ if($ENV{ROS_DISTRO} MATCHES "foxy|humble")
     endif()
 endif()
 
+# Agibot D1 SDK requires glibc >= 2.34
+option(BUILD_D1 "Build rl_real_d1 target (requires glibc >= 2.34)" ON)
+set(AGIBOT_D1_SUPPORTED OFF)
+if(BUILD_D1 AND SYSTEM_TYPE STREQUAL "Linux")
+    execute_process(COMMAND ldd --version
+                    OUTPUT_VARIABLE LDD_VERSION_OUTPUT
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    string(REGEX MATCH "ldd \\(.*\\) ([0-9]+\\.[0-9]+)" _ "${LDD_VERSION_OUTPUT}")
+    set(GLIBC_VERSION ${CMAKE_MATCH_1})
+    if(GLIBC_VERSION AND GLIBC_VERSION VERSION_GREATER_EQUAL 2.34)
+        set(AGIBOT_D1_SUPPORTED ON)
+    else()
+        message(WARNING "Agibot D1 SDK requires glibc >= 2.34, but system glibc is ${GLIBC_VERSION}. rl_real_d1 will be skipped.")
+        set(BUILD_D1 OFF)
+    endif()
+endif()
+
 # Agibot D1 SDK (zsl-1)
-if(SYSTEM_TYPE STREQUAL "Linux")
+if(AGIBOT_D1_SUPPORTED)
     add_library(agibot_d1_sdk SHARED IMPORTED)
     set_target_properties(agibot_d1_sdk PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/library/thirdparty/robot_sdk/agibot/agibot_D1_Edu-Ultra/include"
@@ -567,7 +585,7 @@ if(SYSTEM_TYPE STREQUAL "Linux")
 endif()
 
 # executable for rl real d1
-if(SYSTEM_TYPE STREQUAL "Linux")
+if(AGIBOT_D1_SUPPORTED)
     add_executable(rl_real_d1 src/rl_real_d1.cpp)
     target_link_libraries(rl_real_d1
         ${AGIBOT_D1_LIBS}
@@ -749,6 +767,14 @@ endif()
 #     ${ONNX_RUNTIME_LIB}
 # )
 # install(TARGETS test_inference_stability DESTINATION lib/${PROJECT_NAME})
+
+add_executable(test_go2w_handstand_config test/test_go2w_handstand_config.cpp)
+target_link_libraries(test_go2w_handstand_config
+    rl_sdk
+    observation_buffer
+    ${YAML_CPP_LIBRARIES}
+    Threads::Threads
+)
 
 message(STATUS "========================================")
 message(STATUS "       RL_SAR Build Configuration       ")

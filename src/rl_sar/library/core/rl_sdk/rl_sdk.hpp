@@ -180,6 +180,7 @@ struct Observations
     std::vector<T> dof_pos;
     std::vector<T> dof_vel;
     std::vector<T> actions;
+    std::vector<T> root_pos_rel_xy_b;
 };
 
 class RL
@@ -215,6 +216,7 @@ public:
     std::vector<float> ComputeObservation();
     virtual void GetState(RobotState<float> *state) = 0;
     virtual void SetCommand(const RobotCommand<float> *command) = 0;
+    virtual void OnPolicyActivated(const std::string &config_name) { (void)config_name; }
     void StateController(const RobotState<float> *state, RobotCommand<float> *command);
     void ComputeOutput(const std::vector<float> &actions, std::vector<float> &output_dof_pos, std::vector<float> &output_dof_vel, std::vector<float> &output_dof_tau);
 
@@ -237,6 +239,7 @@ public:
     // others
     int motiontime = 0;
     std::string robot_name, config_name;
+    std::string requested_config_name;
     bool simulation_running = true;
     std::string ang_vel_axis = "body";  // "world" or "body"
     unsigned long long episode_length_buf = 0;

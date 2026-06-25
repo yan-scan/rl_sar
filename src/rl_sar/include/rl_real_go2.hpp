@@ -87,8 +87,10 @@ private:
     std::vector<float> Forward() override;
     void GetState(RobotState<float> *state) override;
     void SetCommand(const RobotCommand<float> *command) override;
+    void OnPolicyActivated(const std::string &config_name) override;
     void RunModel();
     void RobotControl();
+    void UpdateEstimatedBaseMotion();
 
     // loop
     std::shared_ptr<LoopFunc> loop_keyboard;
@@ -121,6 +123,9 @@ private:
     // others
     std::vector<float> mapped_joint_positions;
     std::vector<float> mapped_joint_velocities;
+    std::vector<float> estimated_root_pos_w = {0.0f, 0.0f, 0.0f};
+    std::vector<float> estimated_root_origin_w = {0.0f, 0.0f, 0.0f};
+    bool estimated_root_origin_initialized = false;
 
 #if defined(USE_ROS1) && defined(USE_ROS)
     geometry_msgs::Twist cmd_vel;
