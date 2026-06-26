@@ -22,6 +22,16 @@ source "${SCRIPT_DIR}/common.sh"
 OS_TYPE="$(uname -s)"
 ARCH_TYPE="$(uname -m)"
 
+# Detect Jetson platform (used by download_libtorch)
+# Jetson devices typically have /etc/nv_tegra_release or CUDA targets for aarch64.
+IS_JETSON=false
+if [ "${OS_TYPE}" = "Linux" ] && [ "${ARCH_TYPE}" = "aarch64" ]; then
+    if [ -f /etc/nv_tegra_release ] || ls -d /usr/local/cuda-*/targets/aarch64-linux >/dev/null 2>&1; then
+        IS_JETSON=true
+    fi
+fi
+export IS_JETSON
+
 # Parse arguments: support both new and old usage
 if [ $# -eq 0 ]; then
     TARGET_DIR="library/inference_runtime"
